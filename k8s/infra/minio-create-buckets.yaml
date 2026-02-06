@@ -1,0 +1,44 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: minio-create-buckets
+  namespace: mlops-infra
+spec:
+  backoffLimit: 6
+  ttlSecondsAfterFinished: 300
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: mc
+        image: quay.io/minio/mc:latest
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: MINIO_ENDPOINT
+          value: http://minio.mlops-infra.svc.cluster.local:9000
+        - name: MINIO_ACCESS_KEY
+          value: minio
+        - name: MINIO_SECRET_KEY
+          value: minio12345
+        - name: BUCKETS
+          value: "mlflow predictions"
+        command: [ "/bin/sh", "-c" ]
+        args:
+        - |
+          set -euo pipefail
+
+          echo "[mc] Waiting for MinIO at ${MINIO_ENDPOINT} ..."
+          for i in $(seq 1 60); do
+            if mc alias set local "${MINIO_ENDPOINT}" "${MINIO_ACCESS_KEY}" "${MINIO_SECRET_KEY}" >/dev/null 2>&1; then
+              echo "[mc] MinIO reachable."
+              break
+            fi
+            sleep 2
+          done
+
+          echo "[mc] Creating buckets: ${BUCKETS}"
+          for b in ${BUCKETS}; do
+            mc mb --ignore-existing "local/${b}"
+          done
+
+          echo "[mc] Done."
